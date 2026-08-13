@@ -4,7 +4,7 @@
 
 **New here? Read the [step-by-step guide](docs/GUIDE.md)** — it walks you from clone to shipping your first feature. The system diagrams are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-**Note for the PR** if you cannot merge your pr is because there is a high veulnerability and the system doesn't allow for pr with high vulnerabilities to be merged. Instructions are below to fix this.
+**Note for PRs:** If a PR cannot be merged, check whether CI is failing on `pnpm audit --audit-level=high`. High or critical dependency vulnerabilities must be fixed before merge.
 
 ## Stack
 
@@ -129,24 +129,9 @@ pnpm run validate         # Check for unreplaced template placeholders
 
 Security is enforced in independent layers — Claude Code guard hooks, HTTP hardening (helmet/CORS/rate limits), token + session-cookie auth, Zod input validation, default-deny Firestore rules, and CI scanning (`pnpm audit`). See [docs/SECURITY.md](docs/SECURITY.md).
 
-### Known `pnpm audit` findings (manual fix)
+### Dependency audit
 
-
-`pnpm audit` currently flags two high-severity CVEs — both transitive, dev/build-time only, not runtime-reachable:
-
-| Package | Issue | Pulled in by |
-|---------|-------|--------------|
-| `js-yaml` | CVE-2026-59870 — quadratic CPU DoS on `!!omap` resolution | eslint's dependency chain (lint-time only) |
-| `nanoid` | Infinite loop when a custom generator's `size` is 0 | postcss, used by Tailwind/Next/Vitest builds (build-time only) |
-
-To patch: add these two lines under `overrides:` in `pnpm-workspace.yaml`, then run `pnpm install`:
-
-```yaml
-  js-yaml: '^4.3.1'
-  nanoid: '^3.3.17'
-```
-
-Confirm with `pnpm audit` — should show 0 high/critical findings.
+CI runs `pnpm audit --audit-level=high` and blocks PRs with high or critical dependency vulnerabilities. Run the same command before opening a PR to confirm the branch is mergeable.
 
 ## Git Workflow
 
@@ -194,8 +179,8 @@ See [CLAUDE.md](CLAUDE.md) for the full harness reference.
 
 ## Deployment
 
-The frontend deploys to **Vercel** (free Hobby tier, no billing account needed — this app is server-rendered, so it needs a server host, not static hosting). 
-Use this to depoy to Vercel - [DEPLOY-TO-VERCEL.md](DEPLOY-TO-VERCEL.md)
+The frontend deploys to **Vercel** (free Hobby tier, no billing account needed — this app is server-rendered, so it needs a server host, not static hosting).
+Use this to deploy to Vercel - [DEPLOY-TO-VERCEL.md](docs/DEPLOY-TO-VERCEL.md)
 
 
 
