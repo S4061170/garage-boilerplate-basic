@@ -4,7 +4,7 @@
 
 **New here? Read the [step-by-step guide](docs/GUIDE.md)** — it walks you from clone to shipping your first feature. The system diagrams are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-**Note for the PR** if you cannot merge your pr is because there is a high veulnerability and the system doesn't allow for pr with high vulnerabilities to be merged. Instructions are below to fix this.
+**Note for PRs:** Check the `Required checks` CI result before merging. Run `pnpm run audit:ci` locally; High/Critical findings block the security gate except for the exact development-only advisory path covered by the [temporary audit exception](docs/AUDIT-EXCEPTION.md).
 
 ## Stack
 
@@ -191,8 +191,8 @@ See [CLAUDE.md](CLAUDE.md) for the full harness reference.
 
 ## Deployment
 
-The frontend deploys to **Vercel** (free Hobby tier, no billing account needed — this app is server-rendered, so it needs a server host, not static hosting). 
-Use this to depoy to Vercel - [DEPLOY-TO-VERCEL.md](DEPLOY-TO-VERCEL.md)
+The frontend deploys to **Vercel** (free Hobby tier, no billing account needed — this app is server-rendered, so it needs a server host, not static hosting).
+Use this to deploy to Vercel - [DEPLOY-TO-VERCEL.md](docs/DEPLOY-TO-VERCEL.md)
 
 
 
