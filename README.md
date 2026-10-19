@@ -4,7 +4,7 @@
 
 **New here? Read the [step-by-step guide](docs/GUIDE.md)** — it walks you from clone to shipping your first feature. The system diagrams are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-**Note for PRs:** If a PR cannot be merged, check whether CI is failing on `pnpm audit --audit-level=high`. High or critical dependency vulnerabilities must be fixed before merge.
+**Note for PRs:** Check the `Required checks` CI result before merging. Run `pnpm run audit:ci` locally; High/Critical findings block the security gate except for the exact development-only advisory path covered by the [temporary audit exception](docs/AUDIT-EXCEPTION.md).
 
 ## Stack
 
@@ -78,7 +78,7 @@ Restart the dev server after changing `.env` — `NEXT_PUBLIC_*` variables are b
 | "Firebase web config is incomplete" on Vercel | A `NEXT_PUBLIC_FIREBASE_*` env var is missing in Vercel. Add it under Project Settings → Environment Variables (same names as your local `.env`), then redeploy — existing deployments don't pick up new env vars automatically. See [docs/CI-CD.md § Vercel Setup](docs/CI-CD.md#vercel-setup-frontend). |
 | `Invalid project id: REPLACE_WITH_...` | Set the real project id in `.firebaserc`. |
 | `'next' is not recognized` / `Command "next" not found` | Run `pnpm install` from the **repo root**. If it persists, delete all `node_modules` folders and reinstall. |
-| Ignored build scripts warning from pnpm | Build approvals live in `pnpm-workspace.yaml` (`allowBuilds`) — re-run `pnpm install`. |
+| Ignored build scripts warning from pnpm | Build approvals live in `pnpm-workspace.yaml` (`onlyBuiltDependencies`) — re-run `pnpm install`. |
 | "Missing or insufficient permissions" | Firestore security rules don't allow that access — add rules in `firebase/firestore.rules`, then deploy them (`npx firebase-tools deploy --only firestore:rules`). |
 | Commit rejected | Message must be Conventional Commits (`feat: …`, `fix: …`). |
 
@@ -131,7 +131,19 @@ Security is enforced in independent layers — Claude Code guard hooks, HTTP har
 
 ### Dependency audit
 
-CI runs `pnpm audit --audit-level=high` and blocks PRs with high or critical dependency vulnerabilities. Run the same command before opening a PR to confirm the branch is mergeable.
+Security patches are pinned in `pnpm-workspace.yaml` and the lockfile. Firebase remains
+at 11.10.0. Install with Node 22 and pnpm 10.18.3 using
+`pnpm install --frozen-lockfile`.
+
+CI runs `pnpm run audit:ci`, which retains the complete full and production audit reports. The unpatched High advisory
+[GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) remains in
+the development dependency path
+`eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch → braces@3.0.3`.
+The [temporary audit exception](docs/AUDIT-EXCEPTION.md) permits only this exact
+development path until 26 October 2026, 23:59:59 Australia/Melbourne (UTC+11).
+Every other High/Critical finding remains blocking; expiry or production exposure
+also fails the gate. Run `pnpm run test:audit` to check these boundaries. Moderate findings remain; a production audit with
+zero High/Critical findings does not establish that all dependencies are vulnerability-free.
 
 ## Git Workflow
 
@@ -179,10 +191,7 @@ See [CLAUDE.md](CLAUDE.md) for the full harness reference.
 
 ## Deployment
 
-The frontend deploys to **Vercel** (free Hobby tier, no billing account needed — this app is server-rendered, so it needs a server host, not static hosting).
-Use this to deploy to Vercel - [DEPLOY-TO-VERCEL.md](docs/DEPLOY-TO-VERCEL.md)
-
-
+The Search & save frontend targets **Firebase App Hosting**, using the complete Next.js server with Server Actions and Firebase Admin. GitHub Actions validates PRs and publishes Firestore Rules only after successful main push CI. See [CI/CD setup and first-release sequence](docs/CI-CD.md) for the reviewed build configuration, Console values, secret/IAM prerequisites and release ordering. Production setup and deployment require separate approval.
 
 ## Forking for a Client Project
 

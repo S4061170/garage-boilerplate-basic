@@ -33,3 +33,14 @@ export interface Note {
   updatedAt: Timestamp
   _schemaVersion: 1
 }
+
+export interface SavedView {
+  id: string
+  uid: string
+  name: string
+  keyword: string
+  sortDirection: 'asc' | 'desc'
+  createdAt: Timestamp
+  updatedAt: Timestamp
+  _schemaVersion: 1
+}

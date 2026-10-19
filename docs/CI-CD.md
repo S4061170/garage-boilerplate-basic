@@ -1,106 +1,145 @@
-# CI/CD
+# CI/CD — Firebase App Hosting and Firestore Rules
 
-## Pipeline Overview
+## Current state
 
-The frontend and the Firebase-owned pieces deploy through two independent paths:
+The deployment target is Firebase App Hosting for the complete Next.js application and GitHub Actions for Firestore Rules. The separate Express backend is not part of Search & save delivery.
 
-```
-PR opened/updated
-    │
-    ▼
-CI (ci.yml)
-├── Lint + Typecheck
-├── Frontend unit tests
-├── Backend unit tests
-└── Security scan (pnpm audit --audit-level=high)
-    │
-    ▼ (all green)
-Merge to main
-    │
-    ├──▶ Vercel (its own GitHub integration, not this repo's Actions)
-    │    └── Builds + deploys the frontend automatically — no Blaze plan needed
-    │
-    └──▶ Deploy (deploy.yml)
-         └── Firestore rules — always deploys on push, free (no Blaze needed)
+[Draft PR #2](https://github.com/S4061170/garage-boilerplate-basic/pull/2) remains unmerged. Main was synchronised into the feature branch at `8dd767c5a9441deb7115048da32f00f262525e20`. Both [automatic PR CI](https://github.com/S4061170/garage-boilerplate-basic/actions/runs/39199829498) and the previously authorised [manual full CI](https://github.com/S4061170/garage-boilerplate-basic/actions/runs/39199824620) passed all seven jobs at that revision: 50 frontend, 5 backend, 15 Rules and 10 audit-policy tests, lint, typechecking and production build.
 
-         Backend (Cloud Function) — manual only, via "Run workflow" in the
-         Actions tab. Requires the Firebase project to be on the Blaze plan.
-```
+This configuration change adds the App Hosting packaging and setup instructions. Its PR checks must pass before merge. Production billing, backend creation, secret/IAM changes, Rules publication and release require separate approval.
 
-**Why the frontend isn't in `deploy.yml`:** this app is server-rendered (Server Actions, `/api/auth/session`, `proxy.ts`), so it needs a server host, not static Firebase Hosting. Vercel's free Hobby tier runs Next.js SSR natively with no billing account required — see **Vercel Setup** below. Firebase Hosting could also do this via its `frameworksBackend` integration, but that runs on Cloud Functions/Cloud Run under the hood, which requires the paid Blaze plan even at zero traffic — Vercel avoids that entirely for the frontend.
+## CI and Rules release
 
-## Vercel Setup (Frontend)
+`.github/workflows/ci.yml` checks placeholders, lint, TypeScript, frontend/backend tests, Firestore Emulator Rules tests, the frontend production build and the full/production dependency audit policy. `Required checks` aggregates every job. The exact development-only audit exception remains unchanged and expires on 26 October 2026 at 23:59:59 Australia/Melbourne; raw audit reports remain available as artifacts.
 
-1. [vercel.com](https://vercel.com) → **Add New Project** → import this GitHub repo
-2. **Root Directory**: set to `frontend` (this is a pnpm workspace monorepo — Vercel auto-detects the Next.js app once the root directory is set)
-3. **Environment Variables** — add these in the Vercel project settings (Production, and Preview if you want PR previews to work):
+Configure main branch protection to require this check, an up-to-date branch or merge queue, and a PR. Remote protection is a separate approved action; a workflow file cannot enable it.
 
-   | Variable | Value |
-   |----------|-------|
-   | `NEXT_PUBLIC_FIREBASE_API_KEY` | from `firebaseConfig` |
-   | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | from `firebaseConfig` |
-   | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | from `firebaseConfig` — same name as in your root `.env` |
-   | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | from `firebaseConfig` |
-   | `NEXT_PUBLIC_FIREBASE_APP_ID` | from `firebaseConfig` |
-   | `NEXT_PUBLIC_APP_NAME` | app display name |
-   | `NEXT_PUBLIC_APP_URL` | your Vercel production URL, once known |
-   | `FIREBASE_SERVICE_ACCOUNT_KEY_BASE64` | base64-encoded service account JSON (server-only — do **not** prefix with `NEXT_PUBLIC_`) |
+The existing `Deploy Firestore Rules` workflow accepts only a successful **push CI on main** from this repository. It checks out `github.event.workflow_run.head_sha` and executes only `firestore:rules` for the explicit project. A PR CI completion does not deploy. The `production` environment must contain:
 
-4. Deploy. Every push to `main` auto-deploys to production from then on — there's no approval gate on Vercel's side, so treat merging to `main` as shipping.
-5. If you later add the `backend/` Express API and need the frontend to call it cross-origin, set `CORS_ORIGIN` in the backend's env to your Vercel production URL.
+| Secret                                | Purpose                                                        |
+| ------------------------------------- | -------------------------------------------------------------- |
+| `FIREBASE_PROJECT_ID`                 | Expected destination: `s4061170-52f3d`.                        |
+| `FIREBASE_SERVICE_ACCOUNT_KEY_BASE64` | Rules deployment identity; decoded account project must match. |
 
-## GitHub Actions Secrets Required (for `deploy.yml`)
+Grant the deployment identity the permissions needed to publish Rules and read project/service configuration. Review least-privilege IAM against the chosen identity; do not grant Owner to bypass missing permissions. The temporary credential file is mode 0600 and removed in an always step. Normal deployment output is retained for 30 days.
 
-Add these in **GitHub → Settings → Secrets and variables → Actions**:
+## App Hosting build context
 
-| Secret | Description |
-|--------|-------------|
-| `FIREBASE_PROJECT_ID` | Firebase project ID (used as `--project` flag). GitHub Actions secrets are never exposed to a browser, so this one intentionally keeps the bare name instead of the `NEXT_PUBLIC_` prefix used in `.env`/Vercel — value is the same project ID either way. |
-| `FIREBASE_SERVICE_ACCOUNT_KEY_BASE64` | Base64-encoded service account JSON |
+Use **repository root `/`**, not `frontend`, as the App Hosting root directory.
 
-### Getting the service account key
+The current provider preparer recognises Nx/Turborepo when preserving a parent monorepo context. For a plain pnpm workspace it treats the selected subdirectory as a standalone application. Selecting `frontend` would therefore omit this repository's root lockfile, overrides and build approvals.
 
-1. Firebase Console → Project Settings → Service Accounts
-2. Click **Generate new private key** → download the JSON file
-3. Encode it:
+The custom commands are required by the selected deployment layout, rather than by Next.js 16 or Node 22 in general. The selected root contains the pnpm lockfile and hoisted dependencies, but the Next.js app/configuration is under `frontend`; the existing root build also compiles the separate Express backend. An adapter-based alternative would require a different verified workspace/build setup. The current change preserves this layout and explicitly builds only the frontend.
 
-```bash
-# macOS (BSD base64 — no -w flag)
-base64 -i service-account.json | tr -d '\n'
+The root `apphosting.yaml` deliberately specifies custom build/run commands. The custom `buildCommand` opts out of the Firebase framework adapter and its framework-specific optimisations; the custom `runCommand` is required to launch the resulting standalone entry point from the selected root:
 
-# Linux (GNU base64)
-base64 -w 0 service-account.json
+- Build: `node scripts/build-apphosting.cjs`.
+- The script builds only the frontend with Next.js, preserving Server Actions and server routes, then copies public/static assets into its standalone tree.
+- `frontend/next.config.ts` enables `output: standalone` and traces dependencies from the repository root.
+- Run: `node frontend/.next/standalone/frontend/server.js`.
+- Only `frontend/.next/standalone` is retained in the runtime image; the workspace source and development tools are not intentionally shipped.
+- The prepare script installs Git hooks only in a Git checkout; source archives without .git skip hook installation without disabling package build scripts.
+- Root engines select Node 22 and pnpm 10.18.3. The Firebase SDK remains 11.10.0.
+- `HOSTNAME=0.0.0.0`; the generated server reads the platform's `PORT`.
 
-# Windows PowerShell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("service-account.json"))
-```
+This uses the documented App Hosting custom-command/output mechanism and Next.js standalone packaging. The public active-support table does not establish active adapter support for Next.js 16.3.8. A clean source archive without .git passed frozen installation and the custom production build. Standalone-only server smoke checks, 50 frontend tests, TypeScript and normal checkout hook installation also passed under Node 22. An eventual Cloud Build must still be recorded separately. No Nx/Turborepo dependency or provider adapter is added.
 
-4. Add the output as `FIREBASE_SERVICE_ACCOUNT_KEY_BASE64` in both GitHub secrets and Vercel's environment variables.
+## Environment and session handling
 
-> **Note:** `firebase login:ci` tokens are deprecated. This project uses `GOOGLE_APPLICATION_CREDENTIALS` via the service account key, which is the current recommended approach.
+The YAML contains only public Firebase web configuration already used by this application. These browser configuration values are not Admin credentials.
 
-## Manual Deployment
+| Configuration                              | Availability                           |
+| ------------------------------------------ | -------------------------------------- |
+| `NEXT_PUBLIC_FIREBASE_API_KEY`             | Build and runtime                      |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`         | Build and runtime                      |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID`          | Build and runtime                      |
+| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Build and runtime                      |
+| `NEXT_PUBLIC_FIREBASE_APP_ID`              | Build and runtime                      |
+| `FIREBASE_SERVICE_ACCOUNT_KEY_BASE64`      | Runtime only, Secret Manager reference |
+| `HOSTNAME`                                 | Runtime only                           |
 
-```bash
-# Authenticate locally (one-time) — no install needed, npx runs the CLI on demand
-npx firebase-tools login
+The proposed Admin secret ID is `garage-admin-service-account-base64`. Its value must be base64-encoded service-account JSON for the same Firebase project. It has not been created or changed. The unchanged initializer uses an explicit certificate; merely assigning a Cloud Run service account does not replace this required variable.
 
-# Firestore rules — free, no Blaze needed
-npx firebase-tools deploy --only firestore:rules
-npx firebase-tools deploy --only firestore:indexes
+The App Hosting runtime identity needs access to that secret. The identity inside its JSON needs `firebaseauth.users.createSession`, `firebaseauth.users.get` and the Firestore permissions used by the application. Review a narrow custom Auth role and the Firestore data-access role against these operations; the broader predefined Firebase Authentication Admin role must not be granted without approval. Keep this runtime identity separate from the Rules deployment identity where practical. Confirm the intended identities and approve IAM grants before cloud setup.
 
-# Backend Cloud Function — optional, requires the Blaze plan
-npx firebase-tools deploy --only functions
-```
+The session route exchanges a Firebase ID token for an HTTP-only, secure production `__session` cookie with SameSite=Lax and a 14-day duration. Server Components and Server Actions verify the cookie through Firebase Admin. Note creation continues through its existing authenticated Server Action; Saved Views continue through the client SDK and Rules. No static export or client-side rewrite replaces these flows.
 
-The frontend has no manual `firebase deploy` equivalent — it deploys via Vercel (dashboard push, or `vercel --prod` with the Vercel CLI if installed).
+The final host must be registered in Firebase Authentication where required by the sign-in method. Preserve HTTPS and the application cookie/origin handling. Authenticated production acceptance requires the approved runtime credential; a successful credential-free build does not validate it.
 
-## Environments
+## Firebase Console setup values
 
-| Environment | Branch | Auto-deploy |
-|-------------|--------|-------------|
-| Production frontend | `main` | Yes, via Vercel's GitHub integration |
-| Production Firestore rules | `main` | Yes, via `deploy.yml` |
-| Production backend (optional) | `main` | No — manual `workflow_dispatch` only |
-| Staging | _set up per project_ | Optional |
-| Local | your own free Firebase project | `pnpm run dev` |
+The values below define the proposed first backend; they do not indicate that cloud resources already exist. Backend ID and region require approval before creation. `us-central1` is a supported baseline; confirm it against the existing Firestore location and latency requirements before approving the region.
+
+| Console field           | Value                                                                                     |
+| ----------------------- | ----------------------------------------------------------------------------------------- |
+| Firebase project        | `s4061170-52f3d` (project number `37648522710`)                                           |
+| Proposed backend ID     | `search-save`                                                                             |
+| Proposed primary region | `us-central1`                                                                             |
+| Repository              | `S4061170/garage-boilerplate-basic`                                                       |
+| App root directory      | `/`                                                                                       |
+| Live branch             | `main`                                                                                    |
+| Runtime                 | `nodejs22`, matching root `engines.node: 22.x`                                            |
+| Package manager         | pnpm `10.18.3`, selected by `packageManager` and `engines.pnpm`                           |
+| Firebase web app        | `1:37648522710:web:4b463efe0d03271ffb5877`                                                |
+| Configuration           | Repository-root `apphosting.yaml`; do not duplicate its variables in Console overrides    |
+| Build / start           | `node scripts/build-apphosting.cjs` / `node frontend/.next/standalone/frontend/server.js` |
+| Runtime output          | `frontend/.next/standalone`                                                               |
+| Scaling                 | Minimum 0 instances; maximum 2 instances                                                  |
+
+Use these public values from `apphosting.yaml` at build and runtime:
+
+| Variable                                   | Value                                      |
+| ------------------------------------------ | ------------------------------------------ |
+| `NEXT_PUBLIC_FIREBASE_API_KEY`             | `AIzaSyDg5db4D46n59hfB-zTYmmdkvzPwWdfNhs`  |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`         | `s4061170-52f3d.firebaseapp.com`           |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID`          | `s4061170-52f3d`                           |
+| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | `37648522710`                              |
+| `NEXT_PUBLIC_FIREBASE_APP_ID`              | `1:37648522710:web:4b463efe0d03271ffb5877` |
+
+`HOSTNAME=0.0.0.0` is runtime-only; App Hosting supplies `PORT`. Runtime-only `FIREBASE_SERVICE_ACCOUNT_KEY_BASE64` references `projects/s4061170-52f3d/secrets/garage-admin-service-account-base64`. Its value is base64 service-account JSON, not a public web key. The YAML's unversioned secret name resolves to the latest version when the backend is built; record the resolved version with release evidence. Do not set local Emulator host variables or import the complete local `.env` into production. Console overrides take precedence over YAML, so inspect the effective values before the first build.
+
+### IAM and production prerequisites
+
+- A project Owner must perform the first backend creation. Approve Blaze billing and the required App Hosting/Cloud Build/Cloud Run/Artifact Registry/Secret Manager/Developer Connect services during onboarding. Retain the provider's generated service-agent grants; grant service-agent roles only to their intended service agents.
+- The expected default build/runtime identity is `firebase-app-hosting-compute@s4061170-52f3d.iam.gserviceaccount.com`. Confirm the actual selected identity during creation. Grant `roles/secretmanager.secretAccessor` on the Admin secret to that identity through the App Hosting secret-access flow. Provision the secret and its access before authorising an initial rollout. If onboarding cannot defer rollout until access is ready, stop before its final deployment confirmation.
+- The identity embedded in the Admin JSON must belong to `s4061170-52f3d`. It needs a custom Auth role containing `firebaseauth.users.createSession` and `firebaseauth.users.get`, and Firestore data access for authenticated note creation and dashboard profile reads. `roles/datastore.user` is the standard data-access role; it covers more than those two application operations, so review its scope before granting. The runtime credential bypasses client Rules; preserve the existing Server Action session checks. No broad Owner/Editor grant is required for application runtime.
+- A separate Rules deployment identity uses `roles/firebaserules.admin`. Review its project/service-read permissions with the pinned CLI before release; required API calls can additionally need `firebase.projects.get`, `resourcemanager.projects.get`, `serviceusage.services.get`, `serviceusage.services.use` and `datastore.databases.get`. Prepare these permissions without granting runtime data-write rights to the Rules identity. The actual first Rules release remains the verification of this identity, not an already observed result.
+- GitHub's `production` environment requires `FIREBASE_PROJECT_ID=s4061170-52f3d` and the separate Rules identity's base64 JSON in `FIREBASE_SERVICE_ACCOUNT_KEY_BASE64`. This GitHub secret is distinct from the App Hosting Secret Manager secret despite the shared environment-variable name.
+- Protect main using the `Required checks` result and a PR before the authorised merge. Register the eventual generated hostname in Firebase Authentication where required, then verify HTTPS session cookies. No final hostname is claimed before backend creation.
+
+## First release and Cloud Build verification
+
+1. Batch the configuration and directly related documentation, validate locally, and make one planned push to the existing feature branch. Allow the normal `pull_request` event to run full CI once. Retain concurrency cancellation, Required checks and the audit gate. Do not dispatch or rerun successful CI jobs.
+2. Before merge approval, settle billing, region/backend ID, the Admin secret/access plan, GitHub production credentials and required-check enforcement. Keep the App Hosting backend uncreated. Confirm the audit exception remains valid; it expires on 26 October 2026 at 23:59:59 Australia/Melbourne.
+3. After separate approval, merge PR #2 once. Record the resulting main SHA. Its push runs CI automatically; only successful main push CI permits the existing workflow to deploy Firestore Rules from that exact SHA. Stop the first release if CI or Rules deployment fails.
+4. After Rules success and separate backend/release approval, create/connect the backend with the values above, targeting the tested main revision. Prepare secret access before final rollout confirmation. Use the creation flow's initial build as the first Cloud Build verification; do not also request a second rollout for the same SHA. Confirm the build's source SHA before it runs, and stop if it differs from the approved main SHA.
+5. Inspect that one build's logs for Node 22, pnpm 10.18.3, successful locked workspace installation with the overrides/build allowlist, the source-archive hook skip, the custom frontend build and standalone output. Verify the Cloud Run revision starts the specified server on the platform PORT, serves public/static assets and has the runtime secret binding. Record the Cloud Build URL, rollout URL, image/revision, resolved secret version and public URL. A local build is not evidence of Cloud Build success.
+6. Perform approved signed-in acceptance for note creation, Search/Sort, Save/Load/Delete, refresh persistence, current Notes results and Retry. Check session-cookie security and ownership using approved test accounts/data. Reuse the same rollout for evidence.
+7. Subsequent authorised merges to main trigger Git-linked App Hosting rollouts and main CI independently. Rules continue to wait for main CI. App Hosting does not automatically wait for that separate workflow: require backward-compatible Rules for ordinary automatic releases, or obtain approval for a coordinated release before incompatible changes. Do not enable GitHub auto-merge as part of this configuration task.
+
+The first release intentionally uses the single backend-creation build after main CI and Rules success. Creating a temporary backend against the feature branch would add builds, costs and release-ordering risks without replacing production acceptance.
+
+## Billing and cost control
+
+Verify whether the existing project already uses Blaze; if it uses Spark, linking an approved Cloud Billing account and upgrading to Blaze requires approval. This review does not change billing. Budget alerts and an approved spending threshold should be configured before backend creation. Alerts and the maximum-instance setting do not establish a hard total-spend cap.
+
+The YAML keeps minimum instances at 0 and maximum instances at 2 to limit idle capacity and scaling. Build time, runtime/egress, image storage and secret/logging usage can still incur charges. Cold starts are possible at a minimum of 0. Review regional latency against the existing database before accepting the proposed region.
+
+For this configuration gate, plan one PR-triggered CI run and zero Firebase Cloud Builds. After release approval, the expected first-release executions are one main CI run, one Rules deployment workflow and one initial App Hosting Cloud Build. Capture existing logs/screenshots without creating extra rollouts or changing branches. Reconsider resource retention after assessment completion with separate approval.
+
+## Release limitations
+
+Cloud Build and authenticated production acceptance remain pending. The custom path for Next.js 16.3.8 is locally validated, but does not establish active Firebase adapter support. A missing/mismatched runtime credential can allow a build to succeed while authenticated requests fail. The final creation flow must not publish the new frontend before its Rules or before its secret access is ready.
+
+## Provider references
+
+- [App Hosting framework/tooling support](https://firebase.google.com/docs/app-hosting/frameworks-tooling)
+- [Provider build-directory selection](https://github.com/GoogleCloudPlatform/buildpacks/blob/main/pkg/firebase/util/util.go)
+- [Custom build/run and output configuration](https://firebase.google.com/docs/app-hosting/configure)
+- [Next.js standalone output](https://nextjs.org/docs/app/api-reference/config/next-config-js/output)
+- [App Hosting rollouts](https://firebase.google.com/docs/app-hosting/rollouts)
+
+- [Firebase Authentication permissions](https://docs.cloud.google.com/iam/docs/roles-permissions/firebaseauth)
+- [App Hosting costs](https://firebase.google.com/docs/app-hosting/costs)
+- [App Hosting architecture, locations and service account](https://firebase.google.com/docs/app-hosting/about-app-hosting)
+- [Firebase Rules permissions](https://docs.cloud.google.com/iam/docs/roles-permissions/firebaserules)

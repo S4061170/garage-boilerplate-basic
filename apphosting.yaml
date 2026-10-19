@@ -1,0 +1,40 @@
+# GitHub-connected App Hosting backend root directory: / (repository root).
+# The plain pnpm workspace needs its root lockfile, overrides and build allowlist.
+# Custom build/run commands deliberately use Next.js standalone instead of an adapter.
+runConfig:
+  minInstances: 0
+  maxInstances: 2
+
+scripts:
+  buildCommand: node scripts/build-apphosting.cjs
+  runCommand: node frontend/.next/standalone/frontend/server.js
+
+outputFiles:
+  serverApp:
+    include:
+      - frontend/.next/standalone
+
+env:
+  - variable: HOSTNAME
+    value: 0.0.0.0
+    availability: [RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: "AIzaSyDg5db4D46n59hfB-zTYmmdkvzPwWdfNhs"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: "s4061170-52f3d.firebaseapp.com"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: "s4061170-52f3d"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "37648522710"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:37648522710:web:4b463efe0d03271ffb5877"
+    availability: [BUILD, RUNTIME]
+  # Proposed Secret Manager binding; create/grant access only after approval.
+  # The current Admin initializer expects base64-encoded service-account JSON.
+  - variable: FIREBASE_SERVICE_ACCOUNT_KEY_BASE64
+    secret: garage-admin-service-account-base64
+    availability: [RUNTIME]
