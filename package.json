@@ -2,6 +2,7 @@
   "name": "garage-boilerplate",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.18.3",
   "engines": {
     "node": ">=22",
     "pnpm": ">=10"
@@ -18,11 +19,13 @@
     "typecheck": "pnpm -r typecheck",
     "bootstrap": "node scripts/bootstrap.js",
     "validate": "node scripts/validate-placeholders.js",
+    "audit:ci": "node scripts/audit-gate.cjs",
+    "test:audit": "node --test scripts/audit-gate.test.cjs",
     "hooks": "lefthook install",
     "prepare": "lefthook install"
   },
   "devDependencies": {
     "lefthook": "^1.11.13",
-    "next": "16.2.12"
+    "next": "16.3.8"
   }
 }

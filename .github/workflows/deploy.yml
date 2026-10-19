@@ -1,0 +1,75 @@
+name: Deploy Firestore Rules
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-firestore-rules
+  cancel-in-progress: false
+
+jobs:
+  deploy-firestore-rules:
+    name: Deploy validated Firestore Rules
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare the production deployment identity
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_SERVICE_ACCOUNT_KEY_BASE64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY_BASE64 }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+          const path = require('node:path')
+          const project = process.env.FIREBASE_PROJECT_ID
+          const encoded = process.env.FIREBASE_SERVICE_ACCOUNT_KEY_BASE64
+          if (!project || !encoded) throw new Error('Missing production Firebase secrets')
+          const account = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'))
+          if (account.project_id !== project) throw new Error('Firebase secret project mismatch')
+          const credentialPath = path.join(process.env.RUNNER_TEMP, 'firebase-rules-key.json')
+          fs.writeFileSync(credentialPath, JSON.stringify(account), { mode: 0o600 })
+          fs.appendFileSync(process.env.GITHUB_ENV, `GOOGLE_APPLICATION_CREDENTIALS=${credentialPath}\n`)
+          NODE
+      - name: Publish only the tested Firestore Rules
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm exec --yes --package=firebase-tools@15.30.1 -- firebase deploy \
+            --only firestore:rules --project "$FIREBASE_PROJECT_ID" --non-interactive \
+            2>&1 | tee firestore-rules-deploy.log
+      - name: Preserve the normal deployment log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestore-rules-deploy-${{ github.event.workflow_run.head_sha }}
+          path: firestore-rules-deploy.log
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Record release evidence
+        if: success()
+        env:
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          printf 'Published Firestore Rules from `%s`.\n\nValidated by: %s\n' "$TESTED_SHA" "$CI_URL" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove temporary credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/firebase-rules-key.json"

@@ -78,7 +78,7 @@ Restart the dev server after changing `.env` — `NEXT_PUBLIC_*` variables are b
 | "Firebase web config is incomplete" on Vercel | A `NEXT_PUBLIC_FIREBASE_*` env var is missing in Vercel. Add it under Project Settings → Environment Variables (same names as your local `.env`), then redeploy — existing deployments don't pick up new env vars automatically. See [docs/CI-CD.md § Vercel Setup](docs/CI-CD.md#vercel-setup-frontend). |
 | `Invalid project id: REPLACE_WITH_...` | Set the real project id in `.firebaserc`. |
 | `'next' is not recognized` / `Command "next" not found` | Run `pnpm install` from the **repo root**. If it persists, delete all `node_modules` folders and reinstall. |
-| Ignored build scripts warning from pnpm | Build approvals live in `pnpm-workspace.yaml` (`allowBuilds`) — re-run `pnpm install`. |
+| Ignored build scripts warning from pnpm | Build approvals live in `pnpm-workspace.yaml` (`onlyBuiltDependencies`) — re-run `pnpm install`. |
 | "Missing or insufficient permissions" | Firestore security rules don't allow that access — add rules in `firebase/firestore.rules`, then deploy them (`npx firebase-tools deploy --only firestore:rules`). |
 | Commit rejected | Message must be Conventional Commits (`feat: …`, `fix: …`). |
 
@@ -129,24 +129,21 @@ pnpm run validate         # Check for unreplaced template placeholders
 
 Security is enforced in independent layers — Claude Code guard hooks, HTTP hardening (helmet/CORS/rate limits), token + session-cookie auth, Zod input validation, default-deny Firestore rules, and CI scanning (`pnpm audit`). See [docs/SECURITY.md](docs/SECURITY.md).
 
-### Known `pnpm audit` findings (manual fix)
+### Dependency audit
 
+Security patches are pinned in `pnpm-workspace.yaml` and the lockfile. Firebase remains
+at 11.10.0. Install with Node 22 and pnpm 10.18.3 using
+`pnpm install --frozen-lockfile`.
 
-`pnpm audit` currently flags two high-severity CVEs — both transitive, dev/build-time only, not runtime-reachable:
-
-| Package | Issue | Pulled in by |
-|---------|-------|--------------|
-| `js-yaml` | CVE-2026-59870 — quadratic CPU DoS on `!!omap` resolution | eslint's dependency chain (lint-time only) |
-| `nanoid` | Infinite loop when a custom generator's `size` is 0 | postcss, used by Tailwind/Next/Vitest builds (build-time only) |
-
-To patch: add these two lines under `overrides:` in `pnpm-workspace.yaml`, then run `pnpm install`:
-
-```yaml
-  js-yaml: '^4.3.1'
-  nanoid: '^3.3.17'
-```
-
-Confirm with `pnpm audit` — should show 0 high/critical findings.
+CI runs `pnpm run audit:ci`, which retains the complete full and production audit reports. The unpatched High advisory
+[GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) remains in
+the development dependency path
+`eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch → braces@3.0.3`.
+The [temporary audit exception](docs/AUDIT-EXCEPTION.md) permits only this exact
+development path until 26 October 2026, 23:59:59 Australia/Melbourne (UTC+11).
+Every other High/Critical finding remains blocking; expiry or production exposure
+also fails the gate. Run `pnpm run test:audit` to check these boundaries. Moderate findings remain; a production audit with
+zero High/Critical findings does not establish that all dependencies are vulnerability-free.
 
 ## Git Workflow
 

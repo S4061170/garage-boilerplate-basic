@@ -1,5 +1,7 @@
 # Deploying to Vercel — Step by Step
 
+> Legacy provider reference: the current assignment delivery target is Firebase. This guide does not establish Firebase release readiness; refer to the release prerequisites before connecting or deploying a provider.
+
 This guide takes your local app live on the internet. It assumes `pnpm run dev` already works on your machine — if it doesn't, fix that first (see `docs/GUIDE.md`).
 
 **What you're deploying:** the `frontend/` app only. It's a full Next.js server (pages + Server Actions + the `/api/auth/session` route) that talks straight to Firebase using the Admin SDK — that's your real backend. The separate `backend/` Express app (Cloud Functions) is optional scaffolding; skip it unless your feature specifically calls it (see the box at the end).
@@ -94,18 +96,11 @@ Still on the same screen, expand **Environment Variables** and add each row belo
 
 **From now on, every push to `main` auto-deploys to this URL.** There's no approval step on Vercel's side — merging to `main` means it's live.
 
-## Step 7 — Deploy Firestore security rules
+## Step 7 — Release the Firestore Rules through CI
 
-This is separate from Vercel and easy to forget — without it, Firestore may reject every read/write from your live app even though the site loads fine.
+The active `.github/workflows/deploy.yml` waits for a successful push CI run on `main`, checks out that exact SHA, and publishes only Firestore Rules. Configure the production environment and Firebase secrets described in [CI-CD.md](CI-CD.md), after approval. Do not substitute a manual laptop deployment for the assignment's automated release evidence.
 
-```bash
-npx firebase-tools login
-npx firebase-tools deploy --only firestore:rules
-```
-
-(This also happens automatically on every push to `main` via `deploy.yml`, if that GitHub Actions workflow is set up for this repo — check the **Actions** tab on GitHub to confirm it ran.)
-
----
+Repository configuration is prepared locally; no successful production release or live acceptance is claimed. Vercel Git deployment and the Rules workflow are independent, so collect both provider logs and verify the intended revision. Connecting Vercel or pushing/merging the workflows can activate deployments and requires approval.
 
 ## Sanity check — is it actually working?
 

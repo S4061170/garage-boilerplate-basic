@@ -1,6 +1,6 @@
 import { collection, doc, type CollectionReference, type DocumentData } from 'firebase/firestore'
 import { getClientDb } from './client'
-import type { Note, UserProfile } from '@/types/firestore'
+import type { Note, SavedView, UserProfile } from '@/types/firestore'
 
 /**
  * Creates a typed Firestore collection reference.
@@ -30,4 +30,13 @@ export function getNotesCollection() {
 
 export function noteDoc(id: string) {
   return doc(getNotesCollection(), id)
+}
+
+export function getSavedViewsCollection() {
+  // The document ID is added on read, rather than stored in Firestore.
+  return typedCollection<Omit<SavedView, 'id'>>('savedViews')
+}
+
+export function savedViewDoc(id: string) {
+  return doc(getSavedViewsCollection(), id)
 }

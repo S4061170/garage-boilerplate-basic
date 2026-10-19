@@ -5,6 +5,10 @@ on:
     branches: [main]
   push:
     branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -19,7 +23,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.18.3
 
       - uses: actions/setup-node@v4
         with:
@@ -46,7 +50,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.18.3
 
       - uses: actions/setup-node@v4
         with:
@@ -67,7 +71,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.18.3
 
       - uses: actions/setup-node@v4
         with:
@@ -88,7 +92,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.18.3
 
       - uses: actions/setup-node@v4
         with:
@@ -98,5 +102,87 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Test audit exception boundaries and expiry
+        run: pnpm run test:audit
+
       - name: Dependency vulnerability audit
-        run: pnpm audit --audit-level=high
+        run: pnpm run audit:ci
+
+      - name: Preserve unsuppressed dependency audits
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audits
+          path: audit-reports/
+          if-no-files-found: error
+          retention-days: 30
+
+  test-firestore-rules:
+    name: Firestore Rules Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Test against the isolated Firestore Emulator
+        run: >-
+          npm exec --yes --package=firebase-tools@15.30.1 --
+          firebase emulators:exec --config firebase.rules-test.json
+          --project demo-notes-saved-views --only firestore
+          "pnpm --filter frontend test:rules"
+      - name: Preserve Rules test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firestore-emulator-log
+          path: firestore-debug.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  build-frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build the Next.js frontend
+        run: pnpm --filter frontend build
+
+  required-checks:
+    name: Required checks
+    if: always()
+    needs:
+      [
+        lint-typecheck,
+        test-frontend,
+        test-backend,
+        security,
+        test-firestore-rules,
+        build-frontend,
+      ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every validation job to succeed
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node -e 'const jobs = JSON.parse(process.env.JOB_RESULTS); if (Object.values(jobs).some(job => job.result !== "success")) process.exit(1)'

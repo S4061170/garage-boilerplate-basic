@@ -64,4 +64,33 @@ This enables **lazy migration** — when a document is read, check `_schemaVersi
 
 ---
 
+## `savedViews` collection
+
+**Path:** `/savedViews/{viewId}`
+**Access:** Authenticated owners may create, read and delete their views. All updates, including owner updates and overwrites, are denied.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `uid` | `string` | Yes | Must equal the authenticated owner's UID. |
+| `name` | `string` | Yes | Trimmed name, 1–60 characters. Duplicate names are permitted. |
+| `keyword` | `string` | Yes | Title keyword, at most 100 characters; an empty keyword matches all personal notes. |
+| `sortDirection` | `'asc' \| 'desc'` | Yes | Creation-date ordering. |
+| `createdAt` | `Timestamp` | Yes | `serverTimestamp()` equal to the Rules request time. |
+| `updatedAt` | `Timestamp` | Yes | Equal to `createdAt`; retained to follow the existing metadata convention. |
+| `_schemaVersion` | `1` | Yes | Version of the stored settings document. |
+
+Only these seven fields are allowed. Document IDs are added to the runtime type when reading and are not stored fields. A saved view contains search conditions rather than copied notes or result IDs. Loading restores conditions against the current Notes subscription. Deleting a view does not delete notes or change the current filters.
+
+Client SDK writes are checked by `firebase/firestore.rules`. Existing note creation continues to use its server action and Admin SDK validation. The application does not expose a saved-view update operation.
+
+### Local Rules tests
+
+With the Firebase CLI and Java installed, run from the repository root:
+
+```sh
+firebase emulators:exec --project demo-notes-saved-views --only firestore --config firebase.rules-test.json "pnpm --filter frontend test:rules"
+```
+
+The separate configuration starts an isolated local database on `127.0.0.1:8085`. The test suite rejects non-loopback endpoints and uses a fixed demo project ID. Ordinary `pnpm run test:component` tests keep mocked Firebase access. Local test configuration does not deploy Rules or change the application database.
+
 <!-- Add new collection schemas below using the /firebase-collection skill -->
