@@ -24,6 +24,7 @@
     "hooks": "lefthook install",
     "prepare": "node scripts/install-git-hooks.cjs"
   },
+  "dependencies": {},
   "devDependencies": {
     "lefthook": "^1.11.13",
     "next": "16.3.8"
