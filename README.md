@@ -191,10 +191,7 @@ See [CLAUDE.md](CLAUDE.md) for the full harness reference.
 
 ## Deployment
 
-The frontend deploys to **Vercel** (free Hobby tier, no billing account needed — this app is server-rendered, so it needs a server host, not static hosting).
-Use this to deploy to Vercel - [DEPLOY-TO-VERCEL.md](docs/DEPLOY-TO-VERCEL.md)
-
-
+The Search & save frontend targets **Firebase App Hosting**, using the complete Next.js server with Server Actions and Firebase Admin. GitHub Actions validates PRs and publishes Firestore Rules only after successful main push CI. See [CI/CD setup and first-release sequence](docs/CI-CD.md) for the reviewed build configuration, Console values, secret/IAM prerequisites and release ordering. Production setup and deployment require separate approval.
 
 ## Forking for a Client Project
 

@@ -4,8 +4,8 @@
   "private": true,
   "packageManager": "pnpm@10.18.3",
   "engines": {
-    "node": ">=22",
-    "pnpm": ">=10"
+    "node": "22.x",
+    "pnpm": "10.18.3"
   },
   "scripts": {
     "dev": "node scripts/sync-env.js && pnpm --filter frontend dev",
@@ -22,7 +22,7 @@
     "audit:ci": "node scripts/audit-gate.cjs",
     "test:audit": "node --test scripts/audit-gate.test.cjs",
     "hooks": "lefthook install",
-    "prepare": "lefthook install"
+    "prepare": "node scripts/install-git-hooks.cjs"
   },
   "devDependencies": {
     "lefthook": "^1.11.13",
